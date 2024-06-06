@@ -81,7 +81,7 @@ Field names are limited to 64 characters. The default maximum size of datasets i
 | **Other Notes**       | Common     | Proprietary | Plain Text | Open       |
 
 :::{.callout-note}
-Regardless of data type, all data will be converted to and `sf` object and thus, the relative speed of these data formats largely doesn't matter for R.
+Regardless of data type, all data will be converted to an `sf` object and thus, the relative speed of these data formats largely doesn't matter for R.
 :::
 
 ## Input and Output of Data
