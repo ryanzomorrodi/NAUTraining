@@ -1,0 +1,775 @@
+---
+title: "Using GIS to Study Social Determinants of Health with R"
+author: "GeoAdvocates"
+format: 
+    revealjs:
+        logo: photos/GeoAdvocates.png
+        footer: <https://ryanzomorrodi.github.io/NAUTraining>
+---
+
+```{r, include = FALSE}
+library(tidyverse)
+options(tigris_use_cache = TRUE)
+```
+
+# Before we talk about code
+
+## Prerequisites
+
+-   R
+
+-   RStudio or other IDE
+
+-   R packages (see Notes)
+
+-   Prior knowledge of basic tidyverse functions.
+
+    If you are looking to learn how to use the R and the tidyverse for data science, we recommend [*R for Data Science*](https://r4ds.hadley.nz/). For more information about how R the programming language works, we recommend [*Advanced R*](https://adv-r.hadley.nz/index.html).
+
+## Why are you here?
+
+What questions led to you taking this training?
+
+## (Almost) All Data is Spatial
+
+-   When conducting population research, almost everything has a spatial aspect to it.
+
+-   We just might not have access to it
+
+-   For those we do, it is important to incorporate spatial techniques to explore our data
+
+## Spatial Questions
+
+-   How does a variable vary by region?
+
+-   Is there a relationship between variables by region?
+
+-   How many facilities are within a region?
+
+-   How far is the nearest facility?
+
+-   Does proximity to a facility have a relationship with another variable?
+
+-   How has access changed over time?
+
+## Using R to Answer Spatial Questions
+
+::: columns
+::: {.column width="60%"}
+-   R is open source and reproducible
+
+-   R is flexible
+
+-   R can be used as part of a workflow or be the whole workflow
+:::
+
+::: {.column width="40%"}
+![](photos/R_logo.svg.png)
+:::
+:::
+
+# Working with Spatial Data
+
+## Vector vs Raster
+
+::: columns
+::: {.column width="40%"}
+-   Vector data is made up of points, lines, and polygons
+    -   sf package
+-   Raster data is made up of cells
+    -   stars package
+:::
+
+::: {.column width="60%"}
+![](photos/vectorVsRaster.png){width="600"}
+:::
+:::
+
+## sf
+
+-   Primary package used for geocomputation within R
+-   Unified interface for several different geospatial libraries
+-   Represents spatial data as a `data.frame` or `tibble` with a geometry list-column with the class `sf`
+
+![](photos/sf_obj.png){fig-align="center" width="780"}
+
+## stars
+
+::: columns
+::: {.column width="40%"}
+-   One of two modern packages used for rasters
+-   Allows for multidimensional data
+-   Well integrated with sf
+-   We will not cover most stars functionality
+:::
+
+::: {.column width="60%"}
+![](photos/stars.png){fig-align="center" width="780"}
+:::
+:::
+
+## Spatial File Formats
+
+|                       | Shapefile  | Geodatabase | Geojson    | Geopackage |
+|-----------------------|------------|-------------|------------|------------|
+| **Speed**             | Medium     | Fast        | Slow       | Fast       |
+| **Size limit**        | 2 GB       | 256 TB      | No limit   | 140 TB     |
+| **Files**             | At least 3 | Many        | 1          | 1          |
+| **Multiple Features** | No         | Yes         | No         | Yes        |
+| **Other Notes**       | Common     | Proprietary | Plain Text | Open       |
+
+## Reading Spatial Data in R
+
+-   Reading from sf is easy, simply specify the path
+
+```{r, echo = TRUE, output = FALSE}
+library(sf)
+
+AZ_Hospitals <- st_read("data/AZ/hospitals")
+AZ_Hospitals
+```
+
+```{r}
+AZ_Hospitals
+```
+
+## Reading Spatial Data in R
+
+-   If you are reading from a file format with multiple layers, specify the layer
+
+```{r, echo = TRUE, output = FALSE}
+library(sf)
+
+AZ_StatAreas <- st_read("data/AZ/statAreas.gdb", layer = "statAreas")
+AZ_StatAreas
+```
+
+```{r}
+AZ_StatAreas
+```
+
+## Reading Spatial Data in R
+
+-   If you want your output to be a tibble, specify `as_tibble = TRUE`
+
+```{r, echo = TRUE, output = FALSE}
+library(sf)
+
+AZ_WICVendors <- st_read("data/AZ/WICVendors.geojson", as_tibble = TRUE)
+AZ_WICVendors
+```
+
+```{r}
+AZ_WICVendors
+```
+
+## Reading Spatial Data in R
+
+-   You can even read from a url
+
+```{r, echo = TRUE, output = FALSE}
+library(sf)
+
+AZ_UCCs <- st_read("https://services1.arcgis.com/mpVYz37anSdrK4d8/arcgis/rest/services/UrgentCareLocs/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson")
+AZ_UCCs
+```
+
+```{r}
+AZ_UCCs
+```
+
+## tigris
+
+-   Census boundaries are readily accessible through the **tigris** package
+-   `states()`, `counties()`, `tracts()`, `block_groups()`, `blocks()`, etc.
+
+```{r, echo = TRUE, output = FALSE}
+library(tigris)
+
+MI_TIGER_counties <- counties(state = "MI", year = 2020)
+plot(st_geometry(MI_TIGER_counties))
+```
+
+```{r, fig.height = 8, fig.align = "center"}
+plot(st_geometry(MI_TIGER_counties))
+```
+
+## tigris
+
+-   Just be careful to specify what boundaries you want
+
+::: columns
+::: {.column width="50%"}
+#### TIGER
+
+`cb = FALSE`
+
+```{r, output = FALSE}
+MI_counties <- counties(state = "MI", year = 2020)
+```
+
+```{r, fig.height = 8, fig.align = "center"}
+MI_counties %>%
+    st_geometry() %>%
+    plot()
+```
+:::
+
+::: {.column width="50%"}
+#### Cartographic
+
+`cb = TRUE`
+
+```{r, output = FALSE}
+MI_counties <- counties(state = "MI", year = 2020, cb = TRUE)
+```
+
+```{r, fig.height = 8, fig.align = "center"}
+MI_counties %>%
+    st_geometry() %>%
+    plot()
+```
+:::
+:::
+
+## Writing Spatial Data in R
+
+-   Writing spatial data is just as easy.
+
+```{r, echo = TRUE, eval = FALSE}
+st_write(AZ_Hospitals, "data/AZ_Hospitals.shp")
+# or
+st_write(AZ_StatAreas, "data/file_path.gdb", layer = "layer_name")
+```
+
+# Visualizing Spatial Data
+
+## Projections
+
+-   The world is not flat
+
+-   Any representation of the earth in 2 dimensions cannot preserve both shape and area
+
+![](photos/US_projections.jpg){fig-align="center" width="550"}
+
+## Projections
+
+-   The projection you use will depend on the area of interest and your aim
+
+-   The US Albers Equal Area Conic Projection is a standard for representing the lower 48
+
+-   Each state has at least one state projection and the best one to may depend on who you ask
+
+-   [epsg.io](https://epsg.io/) is a good place to search for projections
+
+    ![](photos/espg-logo.png){fig-align="center" width="450"}
+
+## Changing Projections
+
+-   To change a `sf`'s projection use `st_transform`
+
+```{r, echo = TRUE, eval = FALSE}
+states(year = 2020, cb = TRUE) %>%
+    filter(GEOID < "60") %>%
+    st_transform("ESRI:102003") %>%
+    st_geometry() %>%
+    plot()
+```
+
+```{r}
+US_states <- states(year = 2020, cb = TRUE) %>%
+    filter(GEOID < "60")
+```
+
+```{r, fig.height = 8, fig.align = "center"}
+st_transform(US_states, "ESRI:102003") %>%
+    st_geometry() %>%
+    plot()
+```
+
+## plot {auto-animate="true"}
+
+-   The easiest way to look at any layer is using the plot function
+-   Note the use of `st_geometry`, by default plot will try to construct maps of every attribute within the `sf` class
+
+```{r, echo = TRUE, fig.height = 8, fig.align = "center"}
+plot(st_geometry(AZ_StatAreas))
+```
+
+## plot {auto-animate="true"}
+
+-   The easiest way to look at any layer is using the plot function
+-   Note the use of `st_geometry`, by default plot will try to construct maps of every attribute within the `sf` class
+
+```{r, echo = TRUE, fig.height = 8, fig.align = "center"}
+plot(st_geometry(AZ_StatAreas))
+plot(st_geometry(AZ_Hospitals), col = "red", pch = 19, cex = 0.5, add = TRUE)
+```
+
+## ggplot2
+
+-   Easy to use, same syntax as normal
+-   Much more customizable
+
+```{r, echo = TRUE, fig.height = 2.5, fig.align = "center"}
+ggplot() +
+    geom_sf(data = AZ_StatAreas) +
+    geom_sf(data = AZ_Hospitals, color = "red", size = 0.5)
+```
+
+## leaflet
+
+-   Interactive
+-   More complex
+
+```{r, echo = TRUE, eval = FALSE}
+library(leaflet)
+
+leaflet(states(cb = TRUE, year = 2020)) %>%     
+    addProviderTiles("CartoDB.Positron") %>%     
+    addPolygons(fillColor = "blue", color = "black", weight = 0.5, group = "states") %>%
+    setView(-98.5795, 39.8282, zoom = 3)
+```
+
+## leaflet
+
+```{r, echo = TRUE, fig.height = 4, fig.align = "center"}
+library(leaflet)
+
+leaflet(states(cb = TRUE, year = 2020)) %>%     
+    addProviderTiles("CartoDB.Positron") %>%     
+    addPolygons(fillColor = "blue", color = "black", weight = 0.5, group = "states") %>%
+    setView(-98.5795, 39.8282, zoom = 3)  
+```
+
+## Stop and make a map
+
+Use tigris to get county boundaries for the state of Arizona and overlay Arizona Hospitals (AZ_Hospitals.shp) within the Arizona Central projection (EPSG:26949) using ggplot2
+
+Tips:
+
+-   `labs()` - map title, legend title, legend labels  
+-   `theme()` and `element_text()` - font, font size, color  
+-   `theme_void()` - remove long lat and background  
+
+# Map Types
+
+## Choropleth
+
+-   Vary color by attribute
+-   Generalize data
+-   Useful for relative data
+
+```{r, echo = TRUE, output = FALSE}
+AZ_PLACES_hosp <- st_read("data/pres/sample.geojson", as_tibble = TRUE)
+```
+
+## Continuous Scale
+
+-   Is default for ggplot
+-   Not robust to outliers
+-   Difficult to identify a color value and associate it with its value on the scale
+-   `scale_fill_distiller`
+
+```{r, eval = FALSE}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp, aes(fill = `Diabetes Adjusted Prevalence`)) +
+    scale_fill_distiller(palette = "Blues", direction = 1)
+```
+
+## Continuous Scale
+
+```{r, echo = TRUE}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp, aes(fill = `Diabetes Adjusted Prevalence`)) +
+    scale_fill_distiller(palette = "Blues", direction = 1)
+```
+
+## Quantile Breaks
+
+-   Great for comparisons
+-   Can group regions that are very different
+-   Easy to identify a color value and associate it with its value on the scale
+-   `scale_fill_brewer`
+
+## Quantile Breaks
+
+```{r, echo = TRUE, fig.height = 3, fig.align = "center"}
+ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp, 
+        aes(fill = cut(`Diabetes Adjusted Prevalence`, 
+            quantile(`Diabetes Adjusted Prevalence`, 
+                probs = seq(0, 1, 0.2)), 
+                include.lowest=TRUE))) +
+    scale_fill_brewer(palette = "Blues")
+```
+
+## Equal Interval Breaks
+
+-   Not robust to outliers
+-   Easy to identify a color value and associate it with its value on the scale
+-   `scale_fill_fermenter`
+
+## Equal Interval Breaks
+
+```{r, echo = TRUE, fig.height = 3, fig.align = "center"}
+ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp, 
+        aes(fill = `Diabetes Adjusted Prevalence`)
+    ) +
+    scale_fill_fermenter(palette = "Blues")
+```
+
+## Manual Breaks
+
+-   Requires prior information about important breaks
+-   Easy to identify a color value and associate it with its value on the scale
+-   `scale_fill_fermenter`
+
+## Manual Breaks
+
+```{r, echo = TRUE, fig.height = 3, fig.align = "center"}
+ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp, 
+        aes(fill = `Diabetes Adjusted Prevalence`)
+    ) +
+    scale_fill_fermenter(palette = "Blues", breaks = c(10, 12, 14, 18, 20))
+```
+
+## Cartograms
+
+-   Same as choropleth
+-   Transforms geographic areas so that their area is proportional to the population
+-   Types
+    -   Continuous (`cartogram_cont`) - distorts shape
+    -   Discontinuous (`cartogram_ncont`) - maintains shape, distorts size
+    -   Dorling (`cartogram_dorling`) - creates circles of weighted size
+
+## Cartograms
+
+```{r, echo = TRUE, fig.height = 3, fig.align = "center"}
+library(cartogram)
+
+AZ_PLACES_hosp_carto <- AZ_PLACES_hosp %>%
+    cartogram_ncont("Population")
+
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp_carto, aes(fill = `Diabetes Adjusted Prevalence`)) +
+    scale_fill_distiller(palette = "Blues")
+```
+
+## Proportional Symbol
+
+-   Choropleths are best used with relative data (aka rates)
+-   Symbol maps are best used with count data
+-   Like cartograms, symbol maps mitigate area bias
+-   Have a continuous scale
+-   `st_centroid`, `scale_size`, and `aes(pch = 20, size =` FIELD`)`
+
+## Proportional Symbol
+
+```{r, echo = TRUE, fig.height = 3, fig.align = "center"}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(data = st_centroid(AZ_PLACES_hosp),
+        pch = 20, aes(size = `Hospital Count`), 
+        fill = "red"
+    ) +
+    scale_size(range = c(1, 20)) 
+```
+
+## Graduated Symbol
+
+-   Choropleths are best used with relative data (aka rates)
+-   Symbol maps are best used with count data
+-   Like cartograms, symbol maps mitigate area bias
+-   Have binned values
+-   `st_centroid`, `scale_size_binned`, and `aes(pch = 20, size =` FIELD`)`
+
+## Graduated Symbol
+
+```{r, echo = TRUE, fig.height = 3, fig.align = "center"}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(data = st_centroid(AZ_PLACES_hosp),
+        pch = 20, aes(size = `Hospital Count`), 
+        fill = "red"
+    ) +
+    scale_size_binned(range = c(1, 20), breaks = c(1, 5, 20))
+```
+
+## Dot Density
+
+-   Randomly distributed dots representing some number of counts
+-   Masks data
+-   From tidycensus, `as_dot_density`
+
+## Dot Density
+
+```{r, echo = TRUE}
+library(tidycensus)
+
+AZ_PLACES_hosp_dots <- as_dot_density(AZ_PLACES_hosp,
+  value = "Population",
+  values_per_dot = 10000
+)
+
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(data = AZ_PLACES_hosp_dots, size = 0.5) +
+    labs(caption = "1 dot = 10000")
+```
+
+```{r, fig.height = 3, fig.align = "center"}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(data = AZ_PLACES_hosp_dots, size = 0.5) +
+    labs(caption = "1 dot = 10000")
+```
+
+## Stop and make some maps
+1.  Make a quantile breaks choropleth map using the PLACES data (data/pres/sample.geojson) with hospital locations (data/AZ/hospitals) layered on top
+    -  Alternatively, you can layer a symbol map on top
+2.  Using `cowplot::plot_grid(`plot1`, `plot2`)`, plot two maps of different types, side by side
+
+# Geocomputation
+
+## More on Projections
+
+-   Much of the data you may come across will be **unprojected**
+-   In R, you can check if a `sf` is unprojected by using `st_is_longlat()`
+
+```{r, fig.height = 3, fig.align = "center"}
+library(cowplot)
+
+US_states <- states() %>%
+    filter(GEOID < "60")
+
+unprojected <- ggplot() +
+    geom_sf(data = US_states)
+
+projected <- ggplot() +
+    geom_sf(data = st_transform(US_states, "ESRI:102003"))
+
+plot_grid(projected, unprojected, labels = c('projected', 'unprojected'))
+```
+
+## More on Projections
+
+-   R uses an geocomputing engine called S2 which represents the earth which approximates the earth as a sphere when using unprojected data
+-   S2 mitigates issues associated with assuming planar geometry
+-   S2 is not perfect, and often, using a good projection can reduce frustrations down the road
+
+## Typical Identifiers
+
+-   For census geometries, we have [FIPS codes](https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html) (aka GEOIDs)
+
+    | **Area**    | **Structure**                  | **Digits** |
+    |-------------|--------------------------------|------------|
+    | State       | STATE                          | 2          |
+    | County      | STATE+COUNTY                   | 2+3=5      |
+    | Tract       | STATE+COUNTY+TRACT             | 2+3+6=11   |
+    | Block Group | STATE+COUNTY+TRACT+BLOCK GROUP | 2+3+6+1=12 |
+    | Block       | STATE+COUNTY+TRACT+BLOCK       | 2+3+6+4=15 |
+
+## Tabular Joins
+
+-   Because `sf`s are special `data.frames` or `tibbles`, you can join data just as you would with a table.
+-   The tables must have identical identifiers
+-   Just like table to table joins, you must be careful with data types.
+-   `left_join()`, `right_join()`, `inner_join()`, and `outer_join()` all work
+
+## Tabular Joins
+```{r, echo = TRUE}
+states <- counties(state = "AZ") %>%
+    select(GEOID)
+PLACES <- read_csv("data/US/PLACES2023/PLACES2023_county.csv")
+
+left_join(states, PLACES, join_by(GEOID == CountyFIPS))
+```
+
+## Table to Points
+-   Tables with longitude and latitude data can be convered into `sf` objects.
+-   Addresses needed to be converted to longitude and latitude data before conversion to `sf` objects. This process is called **geocoding**.
+-   `st_as_sf(`df`, coords = c("`lon`", "`lat`"), crs = `crs`)`
+
+## Table to Points
+
+```{r, echo = TRUE, eval = FALSE}
+cop2020_tract <- read_csv("data/US/COP2020/COP2020_tract.txt")
+
+st_as_sf(cop2020_tract, coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+```
+
+```{r, eval = TRUE}
+cop2020_tract <- read_csv("data/US/COP2020/COP2020_tract.txt")
+```
+
+```{r, eval = TRUE}
+st_as_sf(cop2020_tract, coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+```
+
+## Spatial Joins
+
+-   Joins on a spatial relationship, including
+    -   `st_intersects()`
+    -   `st_contains()`
+    -   `st_is_within_distance()`
+-   Takes geometry from first `sf` object
+-   `st_join(`sf1`,` sf2`, join =` One of above`)`
+
+## Spatial Joins
+
+```{r, echo = TRUE, eval = FALSE}
+AZ_hosp <- st_read("data/AZ/hospitals")
+AZ_statAreas <- st_read("data/AZ/statAreas.gdb", layer = "statAreas")
+
+st_join(AZ_hosp, AZ_statAreas)
+```
+
+```{r, output = FALSE, eval = TRUE}
+AZ_hosp <- st_read("data/AZ/hospitals")
+AZ_statAreas <- st_read("data/AZ/statAreas.gdb", layer = "statAreas")
+```
+
+```{r, eval = TRUE}
+st_join(AZ_hosp, AZ_statAreas)
+```
+
+## Spatial Join + Summarize
+```{r, echo = TRUE}
+st_join(AZ_hosp, AZ_statAreas) %>%
+    group_by(CSA_ID) %>%
+    summarize(count = n(), POP2020 = first(POP2020)) %>%
+    mutate(countPerHunThoP = 100000 * count / POP2020)
+```
+
+## Buffers
+
+-   Gives as the crow flies distance around a point, line or polygon
+-   Benefits greatly from a good projection
+-   Can help us get at questions of access
+-   `st_buffer(`sf1`,` distance `)`
+
+## Buffers
+
+```{r, echo = TRUE}
+AZ_hosp %>%
+    st_transform("EPSG:26949") %>%
+    st_buffer(units::as_units(10, "mi")) %>%
+    ggplot() +
+        geom_sf(data = AZ_statAreas) +
+        geom_sf(fill = "red")
+```
+
+## Distance
+
+-   Allows us to tell how far two locations are
+-   Can help us get at questions of access
+-   By default, will generate distances between every element of one sf to another
+-   `st_distance(`sf1`,` sf2`, by_element =` TRUE/FALSE `)`
+
+## Distance Matrix
+
+```{r, echo = TRUE}
+read_csv("data/US/COP2020/COP2020_tract.txt") %>%
+    filter(STATEFP == "04") %>%
+    st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+    st_distance(., AZ_hosp) %>%
+    head()
+```
+
+## Distance
+
+```{r, echo = TRUE}
+read_csv("data/US/COP2020/COP2020_tract.txt") %>%
+    filter(STATEFP == "04") %>%
+    st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+    mutate(nearest = st_nearest_feature(., AZ_hosp)) %>% 
+    mutate(distance = st_distance(., AZ_hosp[nearest,], by_element = TRUE))
+```
+
+## Geocoding
+
+-   Allows us to retrieve coordinates for addresses
+-   Interfaces with multiple geocoders
+-   **DO NOT** use an non-compliant geocoder for private data
+    -   Geocodio has a paid HIPPA compliant geocoder
+-   Addresses are sufficient information to reidentify individuals
+-   We can use the `tidygeocoder` package to geocode addresses
+
+
+## Geocoding
+
+```{r, echo = TRUE}
+library(tidygeocoder)
+
+AZ_hosp %>%
+    mutate(addr = 
+        str_c(ADDRESS, ", ", CITY, ", AZ ", ZIP)) %>%
+    slice_head(n = 5) %>%
+    geocode(addr, method = "osm")
+```
+
+# Best Practices
+
+## Map making is an art
+
+
+::: columns
+::: {.column width="60%"}
+-   Good map making takes into consideration the 
+    -   audience
+    -   medium
+    -   message
+:::
+::: {.column width="40%"}
+![](photos/japan_map.jpg){fig-align="center" width="780"}
+:::
+:::
+
+## Section 508 Compliance
+
+-   Make your maps accessible by
+    -   Using a monochromatic color scale (unless appropriate)  
+    -   Providing descriptive text or alt text  
+    -   If possible, including map, description, and data together  
+
+## Be Careful With Location Data
+
+-   Locations are often sensitive
+-   You can mask locations using
+    -   Symbol maps
+    -   Dot density maps
+    -   Converting to rates and using a choropleth map
+
+### Provide Metadata
+
+It is a good practice to add the following information to your map:  
+
+-   Author  
+-   Date  
+-   Data source and year  
+
+## Stop and make some maps
+
+1.  Use a table join to join the Area Deprivation Index to block groups within Arizona. Create a map of Area Deprivation Index at the block group level for the state of Arizona
+
+## Stop and make some maps
+
+2.  Create a graduated symbol map of the number of WIC Vendors within Arizona counties using quantile breaks. Using `cowplot`, place a quantile breaks choropleth map of diabetes adjusted prevalence (PLACES) also within Arizona counties.
+
+## Stop and make some maps
+
+3.  Create a continuous choropleth map of distance to the nearest pharmacy at the block group level for Maricopa County
+
+## Stop and make some maps
+
+4.  Estimate the number of individuals within 15 miles of a hospital.
+    -   Create a buffer around the hospitals
+    -   Convert the centers of population block group table to an `sf` object
+    -   Spatially join the centers of population to the hospital buffers
+    -   Filter out centers of population not within a buffer, and sum the population

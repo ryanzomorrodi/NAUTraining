@@ -1,0 +1,15 @@
+---
+title: "Using GIS to Study Social Determinants of Health with R"
+author: GeoAdvocates
+date: 06/06/2024
+---
+
+This website contains all the resources for the R trainings for Northern Arizona University on June 6th and 7th 2024.
+
+See the following:
+
+-   [Presentation](presentation.html)
+
+-   [Notes](notes.html)
+
+-   [Data](data.zip)

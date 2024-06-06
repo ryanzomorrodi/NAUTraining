@@ -1,0 +1,25 @@
+project:
+  type: website
+  output-dir: docs
+
+website:
+  title: "Using GIS to Study Social Determinants of Health with R"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: presentation.qmd
+        text: Presentation
+      - href: notes.qmd
+        text: Notes
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+execute: 
+  freeze: auto
+
+
+

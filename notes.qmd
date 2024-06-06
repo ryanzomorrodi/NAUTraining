@@ -1,0 +1,810 @@
+---
+title: "Using GIS to Study Social Determinants of Health with R"
+author: "GeoAdvocates"
+title-block-banner: true
+format: 
+    html:
+        toc: true
+        toc-depth: 3
+---
+
+## Setting The Stage
+
+### (Almost) All Data Is Spatial
+
+When conducting population research, almost everything has a spatial aspect to it. We often may not have access to this spatial resolution, but for those data that we do, it is important to incorporate spatial techniques to explore our data.
+
+Exploring our data through a spatial lense allows us to answer questions like:
+
+-   How does a variable vary by region?  
+-   Is there a relationship between variables by region?  
+-   How many facilities are within a region?  
+-   How far is the nearest facility?  
+-   Does proximity to a facility have a relationship with another variable?  
+-   How has a variable changed over time?  
+
+Before you participate in this training, think about what questions you want to explore.
+
+### Looking To Learn More?
+
+The following training was created with the intention to get you up to speed as quick as possible. It is very possible we left something out that may be important to you. For more extensive reading about geocomputation using R, we recommend [*Spatial Data Science*](https://r-spatial.org/book/) and [*Geocomputation with R*](https://r.geocompx.org/).
+
+If you are looking to learn how to use the R and the tidyverse for data science, we recommend [*R for Data Science*](https://r4ds.hadley.nz/). For more information about how R the programming language works, we recommend [*Advanced R*](https://adv-r.hadley.nz/index.html).
+
+### Packages
+
+Since R is open source, anyone can make a package! It also means that there are lots of useful packages to pick from. The following are a non-exhaustive list of some the packages that we use most often. We encourage you to explore beyond this list. For this training, we will only be using these packages and their dependencies.
+
+-   `sf` - The primary package for vector-based geospatial computation within R. One of the most useful aspects about sf is that it allows you to interact with the attribute tables of spatial objects in much the very same ways you would a `tibble` or `data.table`.
+-   `stars` - One of two main modern packages for raster-based geospatial data. Also offers the ability the work with multidimensional data. Made by the same people who made sf, and is therefore very well integrated.
+-   `tidyverse` - A collection of data science related packages that is fairly ubiquitious throughout R. It is developed by Posit who make RStudio.
+-   `tigris` - A package that allows users to download Census geometries using the Census API. Often, we rely on Census boundaries, so tigris makes getting that data easier and more repeatable.
+-   `tidycensus` - A package that allows users to download Census variables and tables using the Census API. Can be really useful for the tedious process of extracting census variables. In this training, we use it to make a dot density map.
+-   `leaflet` - An R interface for the Leaflet open-source JavaScript library that allows R users to easily construct interactive maps.
+-   `cowplot` - An add-on package to `ggplot2` (from the tidyverse) that aids with making "publication-ready figures". Its developer, Claus O. Wilke, has a great book on data visualization called [Fundamentals of Data Visualization](https://clauswilke.com/dataviz/), where he uses cowplot extensively.
+-   `cartogram` - A package to create cartograms. Simple as that.
+
+Use the following command to install the above packages.
+```{r, eval = FALSE}
+install.packages(c("sf", "stars", "tidyverse", "tigris", "leaflet", "cowplot", "cartogram"))
+```
+
+### File Formats
+
+**Shapefiles** are the most ubiquitous geospatial vector format. They were developed by ESRI in the early 1990s and have aged since. Although they still widely used, they have several limitations
+
+-   Maximum size is 2 GB
+-   Maximum length of field names is 10 characters
+-   Maximum number of fields is 255
+-   No support for NULL values
+
+They, counterintuitively, are made up of several files of which only three are mandatory.
+
+-   .shp – stores feature geometry  
+-   .shx – stores the positional index of the feature geometry  
+-   .dbf – stores the attribute table for the geometry  
+
+**File geodatabases** are a collection of a files in a folder that can store vector, raster, and even non-spatial data. A single file geodatabase can store over 2 billion features or tables. They are great for sharing data with collaborators who use ESRI products.
+
+Field names are limited to 64 characters. The default maximum size of datasets in file geodatabases is 1 TB, but you can increase the maximum size to 256 TB. Older versions of the `sf` drivers may not be able to write to a file geodatabase.
+
+**GeoJSONs** are an plain-text open standard format for spatial data. Since a geoJSON is a single file, it may be easier to send to others. The performance of working off a geoJSON is pretty poor, but this doesn't matter for R users, since all spatial data will be converted into an `sf` object.
+
+**GeoPackages** are open, non-proprietary, SQLite 3 databases that are specifically designed for spatial data. They were defined by the Open Geospatial Consortium (OGC) and were designed to be both lightweight and contained within a single file.
+
+|                       | Shapefile  | Geodatabase | Geojson    | Geopackage |
+|-----------------------|------------|-------------|------------|------------|
+| **Speed** *           | Medium     | Fast        | Slow       | Fast       |
+| **Size limit**        | 2 GB       | 256 TB      | No limit   | 140 TB     |
+| **Files**             | At least 3 | Many        | 1          | 1          |
+| **Multiple Features** | No         | Yes         | No         | Yes        |
+| **Other Notes**       | Common     | Proprietary | Plain Text | Open       |
+
+:::{.callout-note}
+Regardless of data type, all data will be converted to and `sf` object and thus, the relative speed of these data formats largely doesn't matter for R.
+:::
+
+## Input and Output of Data
+
+```{r, output = FALSE}
+library(tidyverse)
+```
+
+### Reading Data
+
+The `sf` package is able to interface with several different drivers and hence is able to read practically any geometry. `st_drivers()` will print out all drivers available within your installation.
+
+Use `st_read` to read in a dataset. This will generate an `sf` object, which is just a `data.frame` or `tibble` with a geometry list-column.
+```{r, output = FALSE}
+library(sf)
+
+AZ_Hospitals <- st_read("data/AZ/hospitals") # or "data/AZ/hospitals/hospitals.shp"
+AZ_Hospitals
+```
+
+```{r, echo = FALSE}
+AZ_Hospitals %>% slice_head(n = 5) %>% knitr::kable()
+```
+
+If you are reading from a file format with multiple layers, specify the layer.
+```{r, output = FALSE}
+AZ_StatAreas <- st_read("data/AZ/statAreas.gdb", layer = "statAreas")
+AZ_StatAreas
+```
+
+```{r, echo = FALSE}
+AZ_StatAreas %>% slice_head(n = 5) %>% knitr::kable()
+```
+
+You can also specify your output to be a tibble.
+```{r, output = FALSE}
+AZ_WICVendors <- st_read("data/AZ/WICVendors.geojson", as_tibble = TRUE)
+AZ_WICVendors
+```
+
+```{r, echo = FALSE}
+AZ_WICVendors %>% slice_head(n = 5) %>% knitr::kable()
+```
+
+You can even read from a url.
+```{r, output = FALSE}
+AZ_UCCs <- st_read("https://services1.arcgis.com/mpVYz37anSdrK4d8/arcgis/rest/services/UrgentCareLocs/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson")
+AZ_UCCs
+```
+
+```{r, echo = FALSE}
+AZ_UCCs %>% slice_head(n = 5) %>% knitr::kable()
+```
+
+### tigris
+Research within the United States is often done using Census geographies. Within R, these geometries are readily accessible through the `tigris` package. The tigris package provides several functions which utilize the Census API to download and import census geographies into R. (`states()`, `counties()`, `tracts()`, `block_groups()`, `blocks()`, etc.).
+
+```{r, output = FALSE}
+library(tigris)
+
+MI_TIGER_counties <- counties(state = "MI", year = 2020)
+plot(st_geometry(MI_TIGER_counties))
+```
+
+```{r, echo = FALSE}
+plot(st_geometry(MI_TIGER_counties))
+```
+
+The census offers two types of boundaries. TIGER/LINE boundaries are contiguous and may span over water, while cartographic boundaries are simplified representations of selected geographic areas that only span over land.
+
+::: columns
+::: {.column width="50%"}
+
+`cb = FALSE`
+
+```{r, output = FALSE}
+MI_counties <- counties(state = "MI", year = 2020)
+```
+
+```{r}
+plot(st_geometry(MI_counties))
+```
+:::
+
+::: {.column width="50%"}
+
+`cb = TRUE`
+
+```{r, output = FALSE}
+MI_counties <- counties(state = "MI", year = 2020, cb = TRUE)
+```
+
+```{r, fig.height = 8, fig.align = "center"}
+plot(st_geometry(MI_counties))
+```
+:::
+:::
+
+### Writing Data
+Writing data is just as easy as reading it. Use the `st_write()` function to write datasets. If you are having issues writing data, use `st_drivers()` to check the capabilities of your current drivers. Older drivers can not write geodatabases.
+
+```{r, echo = TRUE, eval = FALSE}
+st_write(AZ_Hospitals, "data/AZ_Hospitals.shp")
+# or
+st_write(AZ_StatAreas, "data/file_path.gdb", layer = "layer_name")
+```
+
+## Visualizing Spatial Data
+
+### Projections
+
+It is important to remember when making any 2 dimensional representation of a geographic area that the world is not flat. As a result, there are many different ways that we can represent the three dimensional space that our world inhabits within two dimensions. This problem is most pronounced when looking at larger areas.
+
+The ways we transform three dimensional space into two dimensional representations are called projections. It is impossible to make a two dimensional map without introducing distortion to some aspect of the representation. However, many projections optimize for a specific aspect of a map (area, distance, angles, etc.).
+
+For example, if we look at the 50 states, using the default projection (North American Datum of 1983), we can see that the US looks slightly different than we may be use to viewing it.
+```{r, eval = FALSE}
+US_states <- states(cb = TRUE, year = 2020) %>%
+    filter(GEOID < "60") %>%
+    st_shift_longitude()
+
+plot(st_geometry(US_states))
+```
+
+```{r, echo = FALSE, output = FALSE}
+US_states <- states(cb = TRUE, year = 2020) %>%
+    filter(GEOID < "60") %>%
+    st_shift_longitude()
+```
+
+```{r, echo = FALSE}
+plot(st_geometry(US_states))
+```
+
+We can check the projection of our data using `st_crs()`.
+
+```{r}
+st_crs(US_states)
+```
+
+We can transform our data into a different projection using `st_transform()`.
+
+Beware that projections are often accurate for certain geographic regions. For example, if we transform the 50 state's projection to USA Contiguous Albers Equal Area Conic (ESRI:102003), we can see that the lower 48 states look as we might expect, while the Alaska and Hawaii look quite off.
+
+```{r, results = "hold"}
+US_states <- US_states %>%
+    st_transform("ESRI:102003")
+
+plot(st_geometry(US_states))
+```
+
+When trying to map all 50 states, we recommend using the `tigris` function `shift_geometry()`, which will shift and rescale Alaska, and Hawaii (and Puerto Rico if you include it) for thematic mapping.
+
+```{r, results = "hold"}
+US_states <- US_states %>%
+    shift_geometry() 
+
+ggplot() +
+    geom_sf(data = US_states)
+```
+
+### plot
+
+The easiest way to look at any geography is through the default `plot()` function. `plot()` is not super customizable and hence is not the primary way most visualize spatial data within R. By default it will plot up to 9 of the columns within the `sf` object. We can select just the geometry column of an `sf` object using the `st_geometry()` function.
+
+
+```{r}
+plot(st_geometry(AZ_StatAreas))
+```
+
+You can even add layers additonal layers to your plot using `add = TRUE`
+```{r}
+plot(st_geometry(AZ_StatAreas))
+plot(st_geometry(AZ_Hospitals), col = "red", pch = 19, cex = 0.5, add = TRUE)
+```
+
+### ggplot2
+
+`ggplot2` is the predominant data visualization package within R. Thankfully, you can use all the same syntax that you may have learned through using `ggplot2` for non-spatial data to create beautiful maps. Simply use the `geom_sf()` function and specify your data. 
+
+:::{.callout-note}
+If you need more information about `ggplot2`, check out [ggplot2: Elegant Graphics for Data Analysis](https://ggplot2-book.org/)
+:::
+
+```{r}
+library(ggplot2)
+
+ggplot() +
+    geom_sf(data = AZ_StatAreas) +
+    geom_sf(data = AZ_Hospitals, color = "red", size = 0.5)
+```
+
+### leaflet
+
+Statics maps are only one way to visualize spatial data. Often we may have data that we want an audience to be able to play around with and explore. For this, we have interactive maps. Within R, the most comprehensive interactive mapping functionality is provided within the `leaflet` package.
+
+`leaflet` can get quite complicated when you start adding options like
+-   Popups/Labels
+-   User controlled showing or hiding of layers
+-   Custom markers
+-   Custom legend text
+-   Basemaps
+
+As always, its important to think about whether that additional effort provides additional utility to the reader.
+
+```{r, warning = FALSE}
+library(leaflet)
+
+US_states <- states(cb = TRUE, year = 2020) %>%
+    filter(GEOID < "60")  
+
+US_interactive_map <- leaflet(US_states) %>%     
+    addProviderTiles("CartoDB.Positron") %>%     
+    addPolygons(
+        fillColor = "seagreen", 
+        fillOpacity = 0.7,
+        color = "black", 
+        weight = 0.5, 
+        group = "states",
+        highlightOptions = highlightOptions(
+            color = "Black",
+            fillOpacity = 1,
+            bringToFront = T),
+        label = str_glue_data(US_states, "<strong>{NAME}</strong><br>FIPS Code: {GEOID}") %>% 
+                map(htmltools::HTML),
+    ) %>%
+    setView(-98.5795, 39.8282, zoom = 3) 
+US_interactive_map
+```
+
+## Different Map Types
+
+So far we have cover how to make basic maps visualizing geometry, but often we will want to represent data values visually. The follow maps allow us to visualize data in various ways.
+
+### Choropleths
+
+Choropleths vary color of geographic regions based on a variable of interest. They are the most common type of map used within geospatial visualizations and offer an easy way to visualize how a variable varies across geographic regions.
+
+When setting the fill of geographic regions, we use the following three functions
+
+-   `scale_fill_distiller` - for continuous data
+-   `scale_fill_brewer` - for discrete data (factors or strings)
+-   `scale_fill_fermenter` - for continuous data we would like to bin
+
+#### Continuous Scale
+
+By default, ggplot will use a continuous scale to assign map variables onto colors.
+
+```{r, output = FALSE}
+AZ_PLACES_hosp <- st_read("data/pres/sample.geojson", as_tibble = TRUE)
+```
+
+```{r}
+cont_map <- ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp, aes(fill = `Diabetes Adjusted Prevalence`)) +
+    scale_fill_distiller(palette = "Blues", direction = 1) +
+    labs(
+        title = "Diabetes Prevalence among Arizona Counties",
+        fill = "Diabetes Adjusted Prevalence \nAmong Adults >=18",
+    ) + 
+    theme_void() 
+cont_map
+```
+
+#### Quantile Breaks
+
+For readers, it is often difficult to identify a color value and associate it with its value on the scale. Thefore, it is often a good choice to bin values into discrete groups. There are many ways to conduct binning. One of the most ubiquitous is quantiles. Quantile maps are great for making comparisons because you they allow you to compare quantiles across variables. However, they can have the effect of grouping widely different values.
+
+```{r}
+quant_map <- ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp, 
+        aes(fill = 
+            fct_rev(cut(
+                    `Diabetes Adjusted Prevalence`, 
+                    quantile(
+                        `Diabetes Adjusted Prevalence`, 
+                        probs = seq(0, 1, 0.2)), 
+                        include.lowest=TRUE)))) +
+    scale_fill_brewer(palette = "Blues", direction = -1) +
+    labs(
+        title = "Diabetes Prevalence among Arizona Counties",
+        fill = "Diabetes Adjusted Prevalence \nAmong Adults >=18",
+    ) + 
+    theme_void() 
+quant_map
+```
+
+
+#### Equal Interval Breaks
+
+You can also set equally sized breaks. This ends up being similar to a continuous color scale, but allows the reader to more easily identify values from their color.
+
+```{r}
+equal_map <- ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp, 
+        aes(fill = `Diabetes Adjusted Prevalence`)
+    ) +
+    scale_fill_fermenter(palette = "Blues", direction = 1) +
+    labs(
+        title = "Diabetes Prevalence among Arizona Counties",
+        fill = "Diabetes Adjusted Prevalence \nAmong Adults >=18",
+    ) + 
+    theme_void() 
+equal_map
+```
+
+#### Manual Breaks
+
+If you have prior knowledge of a dataset and an idea of what may compose meaningful breaks, you can also set **manual breaks**. This means you can also use your own classification method if you have another you prefer.
+
+```{r}
+manual_map <- ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp, 
+        aes(fill = `Diabetes Adjusted Prevalence`)
+    ) +
+    scale_fill_fermenter(palette = "Blues", direction = 1, breaks = c(9, 11, 13, 15)) +
+    labs(
+        title = "Diabetes Prevalence among Arizona Counties",
+        fill = "Diabetes Adjusted Prevalence \nAmong Adults >=18",
+    ) + 
+    theme_void() 
+
+manual_map
+```
+
+#### Comparisons of Breaks
+To compare our breaks, we will use the `plot_grid()` function from `cowplot` to place our maps within a grid.
+
+```{r, echo = FALSE, output = FALSE}
+library(cowplot)
+```
+
+```{r}
+library(cowplot)
+
+plot_grid(cont_map, quant_map, equal_map, manual_map)
+```
+
+We can see that although our maps are all based off of the same data, we can get pretty different maps. This underscores the importance of using a good choice of breaks. 
+
+You are also not limited to the break methods listed above. There are several other break methods.
+
+### Cartograms
+
+As a visual tool, choropleths are great, but they do have some faults. As viewers, we tend to associate larger areas with more importance, but often area is not correlated with population. Cartograms address this by transforming geographic areas so that their area is proportional to the population.
+
+We can create a cartogram using the cartogram package. There are three different forms of cartograms that the package offers
+
+-   Continuous cartograms (`cartogram_cont`) - distorts shape  
+-   Discontinuous cartograms (`cartogram_ncont`) - maintains shape, distorts size  
+-   Dorling cartogram (`cartogram_dorling`) - creates circles of weighted size  
+
+```{r}
+library(cartogram)
+
+AZ_PLACES_hosp_carto <- AZ_PLACES_hosp %>%
+    cartogram_ncont("Population")
+```
+
+```{r}
+ggplot() + 
+    geom_sf(
+        data = AZ_PLACES_hosp_carto, 
+        aes(fill = `Diabetes Adjusted Prevalence`)
+    ) +
+    scale_fill_distiller(palette = "Blues", direction = -1) +
+    labs(
+        title = "Diabetes Prevalence among Arizona Counties",
+        fill = "Diabetes Adjusted Prevalence \nAmong Adults >=18",
+    ) + 
+    theme_void()
+```
+
+### Proportional/Graduated Symbol Maps
+
+Choropleths are best used with relative data (aka rates), but we typically use another form of map for count data, symbol maps. Like cartograms, symbol maps mitigate area bias, but allow us to avoid distorting the original area.
+
+By default ggplot will use proportional symbols, which often have the same drawbacks as continuous choropleth maps. In order to create proportional symbols, we first need to calculate the center of each geographic region, which we can do using `st_centroid()`, and then we can change the size of the symbol based on our variable of choice.
+
+We can also aggregate point locations to a geometry in order to mask the point locations. This is often important for location data that is sensitive.
+
+:::{.callout-note}
+It is possible for some geographies that the centroid is placed outside of the geometry itself. If this is a concern for you, you can switch out `st_centroid()` for `st_point_on_surface()`, which will guarantee that the point is placed within the geometry.
+:::
+
+```{r, warning = FALSE}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(
+        data = st_centroid(AZ_PLACES_hosp),
+        pch = 20,
+        aes(size = `Hospital Count`),
+        fill = alpha("red", 0.7),
+        col = "red"
+    ) +
+    scale_size(range = c(1, 30)) +
+    labs(
+        title = "Hospital Count by County",
+        size = "Number of Hospitals",
+    ) + 
+    theme_void()
+```
+
+Just like choropleth maps, we can bin our data to create graduated symbols.
+
+```{r, warning = FALSE}
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(
+        data = st_centroid(AZ_PLACES_hosp),
+        pch = 20,
+        aes(size = `Hospital Count`),
+        fill = alpha("red", 0.7),
+        col = "red"
+    ) +
+    scale_size_binned(range = c(1, 30), breaks = c(5, 10, 20)) +
+    labs(
+        title = "Hospital Count by County",
+        size = "Number of Hospitals",
+    ) + 
+    theme_void()
+```
+
+### Dot Density
+
+Another way to visualize counts is through the use of dot density maps. Dot density maps randomly distribute dots through out geographic area to display counts. Often, each dot will represent some count value. If you have sensitive location data, you can also use a dot density map to mask the locations, while still giving the viewer some idea of where the locations lie.
+
+We can use the `as_dot_density` function from the tidycensus package to create a dot density map for us.
+
+```{r}
+library(tidycensus)
+
+AZ_pop_dots <- as_dot_density(
+  AZ_PLACES_hosp,
+  value = "Population",
+  values_per_dot = 10000,
+  group = "GEOID"
+)
+
+ggplot() + 
+    geom_sf(data = AZ_PLACES_hosp) +
+    geom_sf(data = AZ_pop_dots) +
+    labs(
+        title = "Arizona Population by County",
+        caption = "1 dot = 10000"
+    ) + 
+    theme_void()
+```
+
+## Geocomputation
+
+### More on Projections
+
+Much of the data you may come across will be unprojected. In R, you can check if an `sf` object is unprojected by using `st_is_longlat()`. For unprojected data, R uses a geocomputing engine called S2 which represents the earth which approximates the earth as a sphere. S2 is great an mitigates potential issues associated with the planar assumption, but S2 is not perfect. We often find that using a good projection can reduce frustrations when conducting geocomputation.
+
+The following figure shows how unprojected data assumes that a degree is a uniform distance, when this is not the case, as the projected data more clearly shows.
+```{r, eval = FALSE}
+US_states <- states() %>%
+    filter(GEOID < "60")
+
+unprojected <- ggplot() +
+    geom_sf(data = US_states)
+
+projected <- ggplot() +
+    geom_sf(data = st_transform(US_states, "ESRI:102003"))
+
+plot_grid(projected, unprojected, labels = c('projected', 'unprojected'))
+```
+
+```{r, echo = FALSE, output = FALSE}
+US_states <- states() %>%
+    filter(GEOID < "60")
+```
+
+```{r, echo = FALSE}
+unprojected <- ggplot() +
+    geom_sf(data = US_states)
+
+projected <- ggplot() +
+    geom_sf(data = st_transform(US_states, "ESRI:102003"))
+
+plot_grid(projected, unprojected, labels = c('projected', 'unprojected'))
+```
+
+### Typical Identifiers
+
+Some geocomputation operations rely on a unique identifier. For example, Census geographies are uniquely identified by FIPS Codes (aka GEOIDs). 
+
+The following table breaks down the structure of FIPS codes some of the major Census geographies. For more information on FIPS codes check out the [Census Reference](https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html).
+
+| **Area**    | **Structure**                  | **Digits** |
+|-------------|--------------------------------|------------|
+| State       | STATE                          | 2          |
+| County      | STATE+COUNTY                   | 2+3=5      |
+| Tract       | STATE+COUNTY+TRACT             | 2+3+6=11   |
+| Block Group | STATE+COUNTY+TRACT+BLOCK GROUP | 2+3+6+1=12 |
+| Block       | STATE+COUNTY+TRACT+BLOCK       | 2+3+6+4=15 |
+
+### Tabular Joins
+
+One of the most common operations that we may need to conduct is connecting a spatial dataset to a table using join. As we talked about before, `sf` objects are simply `data.frame`s or `tibble`s with an extra geometry column. Fortunately, this means we can use all the typical `tidyverse` functions for joining tables (`left_join()`, `right_join()`, `inner_join()`, `outer_join()`, etc.). 
+
+These joins rely on at least one unique identifier that is present in both tables. If you are having problems joining tables, make sure that the data type of the unique identifier is the same amongst the two tables.
+
+```{r, eval = FALSE}
+states <- counties(state = "AZ") %>%
+    select(GEOID)
+PLACES <- read_csv("data/US/PLACES2023/PLACES2023_county.csv")
+
+left_join(states, PLACES, join_by(GEOID == CountyFIPS))
+```
+
+```{r, echo = FALSE, output = FALSE}
+states <- counties(state = "AZ") %>%
+    select(GEOID)
+PLACES <- read_csv("data/US/PLACES2023/PLACES2023_county.csv")
+```
+
+```{r, echo = FALSE}
+left_join(states, PLACES, join_by(GEOID == CountyFIPS)) %>% slice_head(n = 5) %>% knitr::kable()
+```
+
+### Table to Points
+
+It is common practice to send point data as a table with longitude and latitude fields. Because these tables are not saved in a spatial format, they must be first read as a table and then converted to a `sf` object. It is important that if you recieve a dataset like this, that you check the documentation to see what coordinate reference system your data refers to. It is common convention to use WGS 1984 (EPSG:4326), but this cannot always be assumed.
+
+```{r, eval = FALSE}
+cop2020_tract <- read_csv("data/US/COP2020/COP2020_tract.txt")
+
+st_as_sf(cop2020_tract, coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+```
+
+```{r, echo = FALSE, output = FALSE}
+cop2020_tract <- read_csv("data/US/COP2020/COP2020_tract.txt")
+```
+
+```{r, echo = FALSE}
+st_as_sf(cop2020_tract, coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>% slice_head(n = 5) %>% knitr::kable()
+```
+
+### Spatial Joins
+
+Spatial joins allow us to conduct a join based on a spatial relationship. In practice this means that we can combine the attribute tables of two spatial datasets. `sf` offers us a plethora of spatial relationships to pick from including like `st_intersects`, `st_is_within_distance`, `st_within`. The full list of spatial relationships is detailed with the [sf documenation](https://r-spatial.github.io/sf/reference/st_join.html#details).
+
+To conduct a spatial join, use the `st_join()` function and provide your two spatial datasets. By default, `st_join()` will utilize the spatial relationship of `st_intersects`, but by specifying the `join` parameter, you can change the spatial relationship used.
+
+```{r, echo = TRUE, eval = FALSE}
+AZ_hosp <- st_read("data/AZ/hospitals")
+AZ_statAreas <- st_read("data/AZ/statAreas.gdb", layer = "statAreas")
+
+st_join(AZ_hosp, AZ_statAreas, join = st_intersects)
+```
+
+```{r, echo = FALSE, output = FALSE, eval = TRUE}
+AZ_hosp <- st_read("data/AZ/hospitals")
+AZ_statAreas <- st_read("data/AZ/statAreas.gdb", layer = "statAreas")
+```
+
+```{r, echo = FALSE, eval = TRUE}
+st_join(AZ_hosp, AZ_statAreas, join = st_intersects) %>%
+    slice_head(n =5) %>%
+    knitr::kable()
+```
+
+Spatial joins are a really powerful tool when combined with a `summarize()`. In the following example, we spatially join hospitals to statistical areas and use a `summarize()` to calculate the total number of hospitals as well as keep the population data within our dataset. We can use this data to even calculate a rate measure for number of hospitals per 100,000 population.
+```{r, eval = FALSE}
+st_join(AZ_hosp, AZ_statAreas) %>%
+    group_by(CSA_ID) %>%
+    summarize(count = n(), POP2020 = first(POP2020)) %>%
+    mutate(countPerHunThoP = 100000 * count / POP2020)
+```
+
+```{r, echo = FALSE}
+st_join(AZ_hosp, AZ_statAreas) %>%
+    group_by(CSA_ID) %>%
+    summarize(count = n(), POP2020 = first(POP2020)) %>%
+    mutate(countPerHunThoP = 100000 * count / POP2020) %>%
+    slice_head(n = 5) %>%
+    knitr::kable()
+```
+
+### Buffers
+
+Buffers create polygon shapes representing an as the crow files boundary of a certain distance away from a point, line, or polygon. Buffers can be helpful to assess questions of access. 
+
+Within R this tool consistently has trouble with unprojected data, and hence we recommend using a good projection. Supply `st_buffer()` with a `sf` object and a distance that you would like to buffer around that `sf` object. It may be helpful to use the `as_units()` function from the `units` package to specify units on your buffer.
+
+```{r, echo = TRUE}
+AZ_hosp %>%
+    st_transform("EPSG:26949") %>%
+    st_buffer(units::as_units(10, "mi")) %>%
+    ggplot() +
+        geom_sf(data = AZ_statAreas) +
+        geom_sf(fill = "red")
+```
+
+### Distance
+
+Often we may want to see how far populations are from certain resources. The `st_distance` command allows us to do just that. 
+
+
+In the following example we calculate the distance from every census tract population weighted centroid to every hosptial within AZ. This generates a matrix of distances.
+
+```{r, eval = FALSE}
+read_csv("data/US/COP2020/COP2020_tract.txt") %>%
+    filter(STATEFP == "04") %>%
+    st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+    st_distance(AZ_hosp)
+```
+
+```{r, echo = FALSE, output = FALSE}
+COP2020_tract <- read_csv("data/US/COP2020/COP2020_tract.txt") 
+```
+
+```{r, echo = FALSE}
+COP2020_tract %>%
+    filter(STATEFP == "04") %>%
+    st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+    st_distance(AZ_hosp) %>%
+    head() %>%
+    knitr::kable()
+```
+
+Often, we may only be interested in the closest facility, and with a little bit more work we can add a column to our population weighted centroid dataset detailing the distance to the closest hospital. First, we will use `st_nearest_feature()` to get the index position of the closest hospital within our hospital dataset. Then, we use `st_distance()` to calculate the distance between each population weighted centroid and its closest hospital. Notice that `st_distance()` has been given the parameter `by_element = TRUE`, which yields a vector with the distance between the first elements of x and y, the second, etc.
+
+```{r, eval = FALSE}
+read_csv("data/US/COP2020/COP2020_tract.txt") %>%
+    filter(STATEFP == "04") %>%
+    st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+    mutate(nearest = st_nearest_feature(., AZ_hosp)) %>% 
+    mutate(near_distance = st_distance(., AZ_hosp[nearest,], by_element = TRUE)) %>%
+    select(-nearest)
+```
+
+```{r, echo = FALSE, output = FALSE}
+COP2020_tract <- read_csv("data/US/COP2020/COP2020_tract.txt") 
+```
+
+```{r, echo = FALSE}
+COP2020_tract %>%
+    filter(STATEFP == "04") %>%
+    st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+    mutate(nearest = st_nearest_feature(., AZ_hosp)) %>% 
+    mutate(near_distance = st_distance(., AZ_hosp[nearest,], by_element = TRUE)) %>%
+    select(-nearest) %>%
+    slice_head(n = 5) %>%
+    knitr::kable()
+```
+
+### Geocoding
+
+You may not always have the latitude and longitude data for some set of point data that you are interested, but you may have addresses. That's where geocoding comes in. Geocoding is a process that allows us to retrieve coordinates for address data. 
+
+`tidygeocoder` is the most user friendly package for this kind of work. `tidygeocoder` interfaces with multiple geocoders. Check out the different geocoding options [here](https://jessecambon.github.io/tidygeocoder/articles/geocoder_services.html).
+
+:::{.callout-note}
+Addresses alone are sufficient information to reidentify individuals. If you are working with sensitivity data **DO NOT** use a non-compliant geocoder.
+:::
+
+```{r, eval = FALSE}
+library(tidygeocoder)
+
+AZ_hosp %>%
+    mutate(addr = 
+        str_c(ADDRESS, ", ", CITY, ", AZ ", ZIP)) %>%
+    slice_head(n = 5) %>%
+    geocode(addr, method = "osm")
+```
+
+```{r, echo = FALSE}
+library(tidygeocoder)
+
+AZ_hosp %>%
+    mutate(addr = 
+        str_c(ADDRESS, ", ", CITY, ", AZ ", ZIP)) %>%
+    slice_head(n = 5) %>%
+    geocode(addr, method = "osm") %>%
+    knitr::kable()
+```
+
+## Best Practices
+
+The following are to get you thinking about some best practices when you are working with your own data. Although these remarks may be short, they can be remarkably important to your development as a geospatial analyst. 
+
+### Map Making 
+
+Map making is an art that involves an iterative process of making a map, getting feedback from stakeholders (or even giving yourself feedback), making a map, getting more feedback and so on.
+
+At the very least you should be thinking about  
+
+-   **Audience** - who is going to see your map, what information might be relevant to them, how much familiarity does the viewer have with the data  
+-   **Medium** - how is your map going to be shared, what degree of interaction can the user have with your map, where is the audience going to see your map  
+-   **Message** - what is the message you hope your audience takes away  
+
+### Section 508 Compliance
+
+Section 508 refers to a portion of the Rehabilitation Act of 1973 in the United States that mandates that federal agencies ensure that their electronic and information technology is accessible to people with disabilities. Even if you don't work within a federal agency, Section 508 sets out a good framework for ensuring that our maps are truly accessible to all.
+
+In practice, this can take form as...  
+
+-   Using a monochromatic color scale (unless appropriate)  
+-   Providing descriptive text or alt text  
+-   If possible, including map, description, and data together  
+
+For more information about accessibility guidelines. Check out these [Map Accessibility guidelines](https://mn.gov/mnit/about-mnit/accessibility/maps/) published by the Minnesota IT Services.
+
+### Be Careful With Location Data
+
+Location data alone is sufficient information to reidentify an individual, business, or other entity. If you have been provided with sensitive location data, it is paramount that you maintain the privacy of the data. 
+
+This means...  
+
+-   Not using a non-compliant geocoder - remember you're sending those addresses to the geocoding service  
+-   Masking data - aggregating data through a spatial join and depicting that data with a symbol map or dot density map will allow you to represent the data without exposing potentially sensitive information  
+-   Removing georeferenced data from PDFs or other georeferenced formats  
+
+### Provide Metadata
+
+It is a good practice to add the following information to your map:  
+
+-   Author  
+-   Date  
+-   Data source and year  
